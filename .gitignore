@@ -126,3 +126,4 @@ kernel/configs/android-*.cfg
 *.diff
 *.patch
 *.list
+out/*
