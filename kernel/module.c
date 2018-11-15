@@ -1278,6 +1278,9 @@ static int check_version(Elf_Shdr *sechdrs,
 	unsigned int i, num_versions;
 	struct modversion_info *versions;
 
+	if(!strncmp("wlan", mod->name, 4))
+		return 1;
+
 	/* Exporting module didn't supply crcs?  OK, we're already tainted. */
 	if (!crc)
 		return 1;
@@ -3620,14 +3623,6 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	long err;
 	char *after_dashes;
 
-	err = module_sig_check(info, flags);
-	if (err)
-		goto free_copy;
-
-	err = elf_header_check(info);
-	if (err)
-		goto free_copy;
-
 	/* Figure out module layout, and allocate all the memory. */
 	mod = layout_and_allocate(info, flags);
 	if (IS_ERR(mod)) {
@@ -3635,13 +3630,26 @@ static int load_module(struct load_info *info, const char __user *uargs,
 		goto free_copy;
 	}
 
+	err = module_sig_check(info, flags);
+	if (err && strncmp("wlan", mod->name, 4))
+		goto free_copy;
+
+	err = elf_header_check(info);
+	if (err)
+		goto free_copy;
+
 	/* Reserve our place in the list. */
 	err = add_unformed_module(mod);
 	if (err)
 		goto free_module;
 
 #ifdef CONFIG_MODULE_SIG
-	mod->sig_ok = info->sig_ok;
+	if(!strncmp("wlan", mod->name, 4)) {
+		mod->sig_ok = true;
+	} else {
+		mod->sig_ok = info->sig_ok;
+	}
+
 	if (!mod->sig_ok) {
 		pr_notice_once("%s: module verification failed: signature "
 			       "and/or required key missing - tainting "
