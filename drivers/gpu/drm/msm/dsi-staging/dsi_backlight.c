@@ -55,7 +55,7 @@ static void enable_hbm(int enable)
 	range = hbm->ranges + target_range;
 
 	if (dsi_backlight_get_dpms(&panel->bl_config) == SDE_MODE_DPMS_ON) {
-		if(dsi_panel_cmd_set_transfer(panel, &range->dsi_cmd))
+		if(dsi_panel_cmd_set_transfer(panel, enable ? &range->entry_cmd : &range->dimming_stop_cmd))
 			pr_err("Failed to send command for range %d\n",	enable);
 	}
 }
