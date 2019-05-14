@@ -224,6 +224,15 @@ static ssize_t synaptics_rmi4_noise_state_show(struct device *dev,
 static ssize_t synaptics_rmi4_virtual_key_map_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf);
 
+#ifdef CONFIG_WAKE_GESTURES
+#include <linux/wake_gestures.h>
+static bool is_suspended;
+bool scr_suspended(void)
+{
+	return is_suspended;
+}
+#endif
+
 struct synaptics_rmi4_f01_device_status {
 	union {
 		struct {
@@ -1732,6 +1741,11 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 			input_mt_slot(rmi4_data->input_dev, finger);
 			input_mt_report_slot_state(rmi4_data->input_dev,
 					MT_TOOL_FINGER, 1);
+#endif
+
+#ifdef CONFIG_WAKE_GESTURES
+			if (is_suspended)
+				x += 5000;
 #endif
 
 			input_report_key(rmi4_data->input_dev,
@@ -5296,6 +5310,14 @@ static int synaptics_rmi4_suspend(struct device *dev)
 	if (rmi4_data->stay_awake)
 		return 0;
 
+#ifdef CONFIG_WAKE_GESTURES
+	if (wg_switch) {		
+		enable_irq_wake(rmi4_data->irq);
+		is_suspended = true;
+		goto exit;
+	}
+#endif
+
 	if (rmi4_data->enable_wakeup_gesture) {
 		if (rmi4_data->no_sleep_setting) {
 			synaptics_rmi4_reg_read(rmi4_data,
@@ -5373,6 +5395,18 @@ static int synaptics_rmi4_resume(struct device *dev)
 
 	if (rmi4_data->stay_awake)
 		return 0;
+
+#ifdef CONFIG_WAKE_GESTURES
+	if (wg_switch) {
+		disable_irq_wake(rmi4_data->irq);
+		is_suspended = false;
+		goto exit;
+	}
+	if (wg_changed) {
+		wg_switch = wg_switch_temp;
+		wg_changed = false;
+	}
+#endif
 
 	if (rmi4_data->enable_wakeup_gesture) {
 		disable_irq_wake(rmi4_data->irq);
