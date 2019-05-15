@@ -40,6 +40,7 @@
 #define S2W_DEFAULT		0
 #define S2S_DEFAULT		0
 #define WG_PWRKEY_DUR           60
+#define VIB_STRENGTH 		50
 
 /* Bonito */
 #define SWEEP_Y_MAX             2160
@@ -94,6 +95,7 @@ static int touch_nr = 0, x_pre = 0, y_pre = 0;
 static bool touch_cnt = true;
 static int wake_vibrate = true;
 static int sleep_vibrate = false;
+int vib_strength = VIB_STRENGTH;
 
 static unsigned int sweep_y_limit = SWEEP_Y_LIMIT;
 static unsigned int sweep_x_limit = SWEEP_X_LIMIT;
@@ -148,7 +150,7 @@ static void wake_presspwr(struct work_struct * wake_presspwr_work) {
 
 	if ((wake_vibrate && is_suspended()) ||
 		(sleep_vibrate && !is_suspended()))
-		set_vibrate();
+		set_vibrate(vib_strength);
 
 	return;
 }
@@ -724,6 +726,32 @@ static ssize_t sleep_vibrate_store(struct kobject *kobj, struct kobj_attribute *
 static struct kobj_attribute sleep_vibrate_attribute =
 	__ATTR(sleep_vibrate, 0664, sleep_vibrate_show, sleep_vibrate_store);
 
+static ssize_t vib_strength_show(struct kobject *kobj, struct kobj_attribute *attr,
+			char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", vib_strength);
+}
+
+static ssize_t vib_strength_store(struct kobject *kobj, struct kobj_attribute *attr,
+			const char *buf, size_t count)
+{
+	int ret, val;
+
+	ret = kstrtoint(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+
+	if (val < 0 || val > 90)
+		val = VIB_STRENGTH;
+
+	vib_strength = val;
+
+	return count;
+}
+
+static struct kobj_attribute vib_strength_attribute =
+	__ATTR(vib_strength, 0664, vib_strength_show, vib_strength_store);
+
 static struct attribute *attrs[] = {
 	&sweep2sleep_attribute.attr,
 	&sweep2wake_attribute.attr,
@@ -731,6 +759,7 @@ static struct attribute *attrs[] = {
 	&wake_gestures_attribute.attr,
 	&wake_vibrate_attribute.attr,
 	&sleep_vibrate_attribute.attr,
+	&vib_strength_attribute.attr,
 	NULL,
 };
 
