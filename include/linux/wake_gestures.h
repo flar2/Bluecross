@@ -28,6 +28,6 @@ extern bool wg_switch_temp;
 extern bool wg_changed;
 
 bool scr_suspended(void);
-void set_vibrate(void);
+void set_vibrate(int value);
 
 #endif	/* _LINUX_WAKE_GESTURES_H */
