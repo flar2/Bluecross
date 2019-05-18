@@ -143,5 +143,31 @@
 				google,dsi-lp-command-state = "dsi_lp_mode";
 			};
 		};
+
+		google,hbm-ranges {
+			hbm-range@0 {
+				google,dsi-hbm-brightness-threshold = <1>;
+
+				google,dsi-bl-hbm-min-level = <0x5>;
+				google,dsi-bl-hbm-max-level = <0x3ff>;
+				google,dsi-hbm-range-entry-command = [
+					/* Disable high brightness */
+					15 01 00 00 00 00 02 53 20
+				];
+				google,dsi-hbm-commands-state = "dsi_lp_mode";
+			};
+
+			hbm-range@1 {
+				google,dsi-hbm-brightness-threshold = <170>;
+
+				google,dsi-bl-hbm-min-level = <0x3ff>;
+				google,dsi-bl-hbm-max-level = <0x3ff>;
+				google,dsi-hbm-range-entry-command = [
+					/* Enable high brightness */
+					15 01 00 00 00 00 02 53 E0
+				];
+				google,dsi-hbm-commands-state = "dsi_lp_mode";
+			};
+		};
 	};
 };
