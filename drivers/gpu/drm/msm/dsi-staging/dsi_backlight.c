@@ -29,7 +29,7 @@
 #include "dsi_panel.h"
 
 #ifdef CONFIG_KLAPSE
-#include "../sde/klapse.h"
+#include <linux/klapse.h>
 #endif
 
 #define BL_NODE_NAME_SIZE 32
