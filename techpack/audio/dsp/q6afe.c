@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -294,6 +294,15 @@ static int32_t sp_make_afe_callback(uint32_t *payload, uint32_t payload_size)
 	return 0;
 }
 
+static bool afe_token_is_valid(uint32_t token)
+{
+	if (token >= AFE_MAX_PORTS) {
+		pr_err("%s: token %d is invalid.\n", __func__, token);
+		return false;
+	}
+	return true;
+}
+
 static int32_t afe_callback(struct apr_client_data *data, void *priv)
 {
 	if (!data) {
@@ -373,7 +382,10 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 						 data->payload_size))
 				return -EINVAL;
 		}
-		wake_up(&this_afe.wait[data->token]);
+		if (afe_token_is_valid(data->token))
+			wake_up(&this_afe.wait[data->token]);
+		else
+			return -EINVAL;
 	} else if (data->payload_size) {
 		uint32_t *payload;
 		uint16_t port_id = 0;
@@ -404,7 +416,10 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 			case AFE_PORTS_CMD_DTMF_CTL:
 			case AFE_SVC_CMD_SET_PARAM:
 				atomic_set(&this_afe.state, 0);
-				wake_up(&this_afe.wait[data->token]);
+				if (afe_token_is_valid(data->token))
+					wake_up(&this_afe.wait[data->token]);
+				else
+					return -EINVAL;
 				break;
 			case AFE_SERVICE_CMD_REGISTER_RT_PORT_DRIVER:
 				break;
@@ -416,7 +431,10 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 				break;
 			case AFE_CMD_ADD_TOPOLOGIES:
 				atomic_set(&this_afe.state, 0);
-				wake_up(&this_afe.wait[data->token]);
+				if (afe_token_is_valid(data->token))
+					wake_up(&this_afe.wait[data->token]);
+				else
+					return -EINVAL;
 				pr_debug("%s: AFE_CMD_ADD_TOPOLOGIES cmd 0x%x\n",
 						__func__, payload[1]);
 				break;
@@ -438,7 +456,10 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 			else
 				this_afe.mmap_handle = payload[0];
 			atomic_set(&this_afe.state, 0);
-			wake_up(&this_afe.wait[data->token]);
+			if (afe_token_is_valid(data->token))
+				wake_up(&this_afe.wait[data->token]);
+			else
+				return -EINVAL;
 		} else if (data->opcode == AFE_EVENT_RT_PROXY_PORT_STATUS) {
 			port_id = (uint16_t)(0x0000FFFF & payload[0]);
 		}
@@ -798,6 +819,7 @@ extern int afe_apr_send_pkt_crus(void *data, int index, int set)
 	else /* get */
 		return afe_apr_send_pkt(data, 0);
 }
+EXPORT_SYMBOL(afe_apr_send_pkt_crus);
 #endif
 
 static int afe_send_cal_block(u16 port_id, struct cal_block_data *cal_block)
@@ -1676,8 +1698,8 @@ void afe_send_cal(u16 port_id)
 		if (ret < 0)
 			send_afe_cal_type(AFE_LSM_TX_CAL, port_id);
 	} else if (afe_get_port_type(port_id) == MSM_AFE_PORT_TYPE_RX) {
-		afe_send_cal_spkr_prot_rx(port_id);
 		send_afe_cal_type(AFE_COMMON_RX_CAL, port_id);
+		afe_send_cal_spkr_prot_rx(port_id);
 	}
 }
 
@@ -2157,7 +2179,8 @@ int afe_port_set_mad_type(u16 port_id, enum afe_mad_type mad_type)
 	int i;
 
 	if (port_id == AFE_PORT_ID_TERTIARY_MI2S_TX ||
-		port_id == AFE_PORT_ID_INT3_MI2S_TX) {
+		port_id == AFE_PORT_ID_INT3_MI2S_TX ||
+		port_id == AFE_PORT_ID_PRIMARY_TDM_TX) {
 		mad_type = MAD_SW_AUDIO;
 		return 0;
 	}
@@ -2176,7 +2199,8 @@ enum afe_mad_type afe_port_get_mad_type(u16 port_id)
 	int i;
 
 	if (port_id == AFE_PORT_ID_TERTIARY_MI2S_TX ||
-		port_id == AFE_PORT_ID_INT3_MI2S_TX)
+		port_id == AFE_PORT_ID_INT3_MI2S_TX ||
+		port_id == AFE_PORT_ID_PRIMARY_TDM_TX)
 		return MAD_SW_AUDIO;
 
 	i = port_id - SLIMBUS_0_RX;
@@ -2727,6 +2751,8 @@ int afe_tdm_port_start(u16 port_id, struct afe_tdm_port_config *tdm_port,
 	int index = 0;
 	uint16_t port_index = 0;
 	enum afe_mad_type mad_type = MAD_HW_NONE;
+	struct cal_block_data *cal_block = NULL;
+	struct audio_cal_info_afe_top *afe_top;
 
 	if (!tdm_port) {
 		pr_err("%s: Error, no configuration data\n", __func__);
@@ -2762,6 +2788,10 @@ int afe_tdm_port_start(u16 port_id, struct afe_tdm_port_config *tdm_port,
 
 	/* Also send the topology id here: */
 	port_index = afe_get_port_index(port_id);
+
+	cal_block = afe_find_cal_topo_id_by_port(
+		this_afe.cal_data[AFE_TOPOLOGY_CAL], port_id);
+
 	if (!(this_afe.afe_cal_mode[port_index] == AFE_CAL_MODE_NONE)) {
 		/* One time call: only for first time */
 		afe_send_custom_topology();
@@ -2839,6 +2869,14 @@ int afe_tdm_port_start(u16 port_id, struct afe_tdm_port_config *tdm_port,
 			pr_err("%s: afe send failed %d\n", __func__, ret);
 			goto fail_cmd;
 		}
+	}
+
+	if (cal_block != NULL) {
+		afe_top = (struct audio_cal_info_afe_top *)cal_block->cal_info;
+		pr_info("%s: top_id:%x acdb_id:%d port_id:0x%x\n",
+			__func__, afe_top->topology, afe_top->acdb_id, port_id);
+	} else {
+		pr_info("%s: port_id:0x%x\n", __func__, port_id);
 	}
 
 	ret = afe_send_cmd_port_start(port_id);
@@ -3170,7 +3208,8 @@ static int q6afe_send_enc_config(u16 port_id,
 		goto exit;
 	}
 
-	if (format == ASM_MEDIA_FMT_LDAC) {
+	if (format == ASM_MEDIA_FMT_LDAC &&
+	    cfg->ldac_config.abr_config.is_abr_enabled) {
 		config.param.payload_size =
 			payload_size + sizeof(config.port.map_param);
 		pr_debug("%s:sending AFE_ENCODER_PARAM_ID_BIT_RATE_LEVEL_MAP to DSP payload = %d\n",
@@ -3255,6 +3294,8 @@ static int __afe_port_start(u16 port_id, union afe_port_config *afe_config,
 	int index = 0;
 	enum afe_mad_type mad_type;
 	uint16_t port_index;
+	struct cal_block_data *cal_block = NULL;
+	struct audio_cal_info_afe_top *afe_top;
 
 	if (!afe_config) {
 		pr_err("%s: Error, no configuration data\n", __func__);
@@ -3318,6 +3359,10 @@ static int __afe_port_start(u16 port_id, union afe_port_config *afe_config,
 	mutex_lock(&this_afe.afe_cmd_lock);
 	/* Also send the topology id here: */
 	port_index = afe_get_port_index(port_id);
+
+	cal_block = afe_find_cal_topo_id_by_port(
+		this_afe.cal_data[AFE_TOPOLOGY_CAL], port_id);
+
 	if (!(this_afe.afe_cal_mode[port_index] == AFE_CAL_MODE_NONE)) {
 		/* One time call: only for first time */
 		afe_send_custom_topology();
@@ -3558,6 +3603,15 @@ static int __afe_port_start(u16 port_id, union afe_port_config *afe_config,
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
+
+	if (cal_block != NULL) {
+		afe_top = (struct audio_cal_info_afe_top *)cal_block->cal_info;
+		pr_info("%s: top_id:%x acdb_id:%d port_id:0x%x\n",
+			__func__, afe_top->topology, afe_top->acdb_id, port_id);
+	} else {
+		pr_info("%s: port_id:0x%x\n", __func__, port_id);
+	}
+
 	ret = afe_send_cmd_port_start(port_id);
 
 fail_cmd:
@@ -3901,6 +3955,9 @@ int afe_get_port_index(u16 port_id)
 		return -EINVAL;
 	}
 }
+#if defined(CONFIG_CIRRUS_SPKR_PROTECTION)
+EXPORT_SYMBOL(afe_get_port_index);
+#endif
 
 int afe_open(u16 port_id,
 		union afe_port_config *afe_config, int rate)
@@ -5676,6 +5733,7 @@ int afe_validate_port(u16 port_id)
 	case SLIMBUS_2_RX:
 	case SLIMBUS_2_TX:
 	case SLIMBUS_3_RX:
+	case SLIMBUS_3_TX:
 	case INT_BT_SCO_RX:
 	case INT_BT_SCO_TX:
 	case INT_BT_A2DP_RX:
@@ -5888,7 +5946,7 @@ int afe_close(int port_id)
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
-	pr_debug("%s: port_id = 0x%x\n", __func__, port_id);
+	pr_info("%s: port_id = 0x%x\n", __func__, port_id);
 	if ((port_id == RT_PROXY_DAI_001_RX) ||
 			(port_id == RT_PROXY_DAI_002_TX)) {
 		pr_debug("%s: before decrementing pcm_afe_instance %d\n",
