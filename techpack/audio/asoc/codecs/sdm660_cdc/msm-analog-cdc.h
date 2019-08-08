@@ -31,6 +31,7 @@
 #define DEFAULT_MULTIPLIER 800
 #define DEFAULT_GAIN 9
 #define DEFAULT_OFFSET 100
+#define BUFFER_SIZE 10
 
 extern const u8 msm89xx_pmic_cdc_reg_readable[MSM89XX_PMIC_CDC_CACHE_SIZE];
 extern const u8 msm89xx_cdc_core_reg_readable[MSM89XX_CDC_CORE_CACHE_SIZE];
@@ -119,6 +120,8 @@ enum {
 enum {
 	ON_DEMAND_MICBIAS = 0,
 	ON_DEMAND_SPKDRV,
+	ON_DEMAND_VDDA18_L10,
+	ON_DEMAND_VDD_L1,
 	ON_DEMAND_SUPPLIES_MAX,
 };
 
@@ -215,6 +218,12 @@ struct sdm660_cdc_priv {
 	/* Entry for version info */
 	struct snd_info_entry *entry;
 	struct snd_info_entry *version_entry;
+	int codec_state;
+};
+
+enum {
+	CODEC_STATE_UNKNOWN = -99,
+	CODEC_STATE_ONLINE = 0,
 };
 
 struct sdm660_cdc_pdata {
