@@ -1745,7 +1745,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 #endif
 
 #ifdef CONFIG_WAKE_GESTURES
-			if (is_suspended)
+			if (wg_switch && is_suspended)
 				x += 5000;
 #endif
 
