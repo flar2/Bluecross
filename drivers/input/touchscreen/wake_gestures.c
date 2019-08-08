@@ -115,6 +115,20 @@ static struct workqueue_struct *dt2w_input_wq;
 static struct work_struct s2w_input_work;
 static struct work_struct dt2w_input_work;
 
+
+//get hardware type
+#define SARGO	1
+#define BONITO	2
+static int hw_version = SARGO;
+static int __init get_model(char *cmdline_model)
+{
+	if (strstr(cmdline_model, "bonito")) {
+		hw_version = BONITO;
+	}
+	return 0;
+}
+__setup("androidboot.hardware=", get_model);
+
 static bool is_suspended(void)
 {
 	return scr_suspended();
@@ -778,6 +792,10 @@ static int __init wake_gestures_init(void)
 	int rc = 0;
 
 	pr_info("start wake gestures\n");
+
+	//exit if not 3a XL
+	if (hw_version == SARGO)
+		return 0;
 
 	wake_dev = input_allocate_device();
 	if (!wake_dev) {
