@@ -223,17 +223,19 @@ static void wake_timer_func(unsigned long data)
 static void diag_drain_apps_data(struct diag_apps_data_t *data)
 {
 	int err = 0;
+	unsigned long flags;
 
 	if (!data || !data->buf)
 		return;
 
 	err = diag_mux_write(DIAG_LOCAL_PROC, data->buf, data->len,
 			     data->ctxt);
+	spin_lock_irqsave(&driver->diagmem_lock, flags);
 	if (err)
 		diagmem_free(driver, data->buf, POOL_TYPE_HDLC);
-
 	data->buf = NULL;
 	data->len = 0;
+	spin_unlock_irqrestore(&driver->diagmem_lock, flags);
 }
 
 void diag_update_user_client_work_fn(struct work_struct *work)
@@ -304,6 +306,8 @@ static void diag_mempool_init(void)
 	diagmem_init(driver, POOL_TYPE_HDLC);
 	diagmem_init(driver, POOL_TYPE_USER);
 	diagmem_init(driver, POOL_TYPE_DCI);
+
+	spin_lock_init(&driver->diagmem_lock);
 }
 
 static void diag_mempool_exit(void)
@@ -1165,15 +1169,19 @@ static int diag_process_userspace_remote(int proc, void *buf, int len)
 }
 #endif
 
-static int mask_request_validate(unsigned char mask_buf[])
+static int mask_request_validate(unsigned char mask_buf[], int len)
 {
 	uint8_t packet_id;
 	uint8_t subsys_id;
 	uint16_t ss_cmd;
 
+	if (len <= 0)
+		return 0;
 	packet_id = mask_buf[0];
 
 	if (packet_id == DIAG_CMD_DIAG_SUBSYS_DELAY) {
+		if (len < 2*sizeof(uint8_t) + sizeof(uint16_t))
+			return 0;
 		subsys_id = mask_buf[1];
 		ss_cmd = *(uint16_t *)(mask_buf + 2);
 		switch (subsys_id) {
@@ -1189,6 +1197,8 @@ static int mask_request_validate(unsigned char mask_buf[])
 			return 0;
 		}
 	} else if (packet_id == 0x4B) {
+		if (len < 2*sizeof(uint8_t) + sizeof(uint16_t))
+			return 0;
 		subsys_id = mask_buf[1];
 		ss_cmd = *(uint16_t *)(mask_buf + 2);
 		/* Packets with SSID which are allowed */
@@ -2754,6 +2764,7 @@ static int diag_process_apps_data_hdlc(unsigned char *buf, int len,
 	struct diag_apps_data_t *data = &hdlc_data;
 	struct diag_send_desc_type send = { NULL, NULL, DIAG_STATE_START, 0 };
 	struct diag_hdlc_dest_type enc = { NULL, NULL, 0 };
+	unsigned long flags;
 	/*
 	 * The maximum encoded size of the buffer can be atmost twice the length
 	 * of the packet. Add three bytes foe footer - 16 bit CRC (2 bytes) +
@@ -2858,10 +2869,11 @@ static int diag_process_apps_data_hdlc(unsigned char *buf, int len,
 	return PKT_ALLOC;
 
 fail_free_buf:
+	spin_lock_irqsave(&driver->diagmem_lock, flags);
 	diagmem_free(driver, data->buf, POOL_TYPE_HDLC);
 	data->buf = NULL;
 	data->len = 0;
-
+	spin_unlock_irqrestore(&driver->diagmem_lock, flags);
 fail_ret:
 	return ret;
 }
@@ -2873,6 +2885,7 @@ static int diag_process_apps_data_non_hdlc(unsigned char *buf, int len,
 	int ret = PKT_DROP;
 	struct diag_pkt_frame_t header;
 	struct diag_apps_data_t *data = &non_hdlc_data;
+	unsigned long flags;
 	/*
 	 * The maximum packet size, when the data is non hdlc encoded is equal
 	 * to the size of the packet frame header and the length. Add 1 for the
@@ -2937,10 +2950,11 @@ static int diag_process_apps_data_non_hdlc(unsigned char *buf, int len,
 	return PKT_ALLOC;
 
 fail_free_buf:
+	spin_lock_irqsave(&driver->diagmem_lock, flags);
 	diagmem_free(driver, data->buf, POOL_TYPE_HDLC);
 	data->buf = NULL;
 	data->len = 0;
-
+	spin_unlock_irqrestore(&driver->diagmem_lock, flags);
 fail_ret:
 	return ret;
 }
@@ -3040,7 +3054,8 @@ static int diag_user_process_raw_data(const char __user *buf, int len)
 	}
 
 	/* Check for proc_type */
-	remote_proc = diag_get_remote(*(int *)user_space_data);
+	if (len >= sizeof(int))
+		remote_proc = diag_get_remote(*(int *)user_space_data);
 	if (remote_proc) {
 		token_offset = sizeof(int);
 		if (len <= MIN_SIZ_ALLOW) {
@@ -3054,7 +3069,7 @@ static int diag_user_process_raw_data(const char __user *buf, int len)
 	}
 	if (driver->mask_check) {
 		if (!mask_request_validate(user_space_data +
-						token_offset)) {
+						token_offset, len)) {
 			pr_alert("diag: mask request Invalid\n");
 			diagmem_free(driver, user_space_data, mempool);
 			user_space_data = NULL;
@@ -3132,7 +3147,7 @@ static int diag_user_process_userspace_data(const char __user *buf, int len)
 	/* Check masks for On-Device logging */
 	if (driver->mask_check) {
 		if (!mask_request_validate(driver->user_space_data_buf +
-					   token_offset)) {
+					   token_offset, len)) {
 			pr_alert("diag: mask request Invalid\n");
 			return -EFAULT;
 		}
