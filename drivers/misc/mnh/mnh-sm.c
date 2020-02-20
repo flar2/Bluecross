@@ -117,25 +117,6 @@ HW_OUTx(HWIO_PCIE_SS_BASE_ADDR, PCIE_SS, reg, inst, val)
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
-/*
- * The maximum timeout value to stay awake.
- *
- * For most use cases, this will not be the only wakeup source,
- * because when Easel not used, application should have suspended Easel.
- *
- * For some rare background tasks, such as firmware update, or killing
- * Easel services in background, we want to stay awake for no more than
- * the timeout value, because at that time we may be the only wakeup
- * source.
- *
- * Driver automatically releases wakelock after timeout value, or
- * releases wakelock whenever Easel is not active.
- *
- * All power states change goes through mnh_sm_set_state(), so
- * it will be the central place to request to stay awake.
- */
-#define MNH_SM_WAKEUP_SOURCE_TIMEOUT_PRODUCTION (10000)
-
 enum fw_image_state {
 	FW_IMAGE_NONE = 0,
 	FW_IMAGE_DOWNLOADING,
@@ -526,9 +507,8 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	mnh_sm_dev->image_loaded = FW_IMAGE_NONE;
 
 	/*
-	 * 1. Prepare for buffer A
-	 * 2. Wait for buffer B to complete
-	 * 3. Start transferring buffer A; repeat
+	 * Use double buffers so we can load the next buffer while the current
+	 * buffer is being transferred.
 	 */
 	while (remaining > 0) {
 		buf = mnh_sm_dev->firmware_buf[buf_index];
@@ -538,9 +518,15 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 
 		memcpy(buf, fw_data + sent, size);
 
+		/*
+		 * Call mnh_firmware_waitdownloaded() here so memcpy() can
+		 * occur between mnh_dma_sblk_start() and
+		 * mnh_firmware_waitdownloaded().
+		 */
 		if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE) {
 			err = mnh_firmware_waitdownloaded();
-			mnh_unmap_mem(dma_blk.src_addr, size, DMA_TO_DEVICE);
+			mnh_unmap_mem(dma_blk.src_addr, dma_blk.len,
+				DMA_TO_DEVICE);
 			if (err)
 				break;
 		}
@@ -570,7 +556,7 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 
 	if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE) {
 		err = mnh_firmware_waitdownloaded();
-		mnh_unmap_mem(dma_blk.src_addr, size, DMA_TO_DEVICE);
+		mnh_unmap_mem(dma_blk.src_addr, dma_blk.len, DMA_TO_DEVICE);
 	}
 
 	return err;
@@ -2267,14 +2253,19 @@ int mnh_sm_set_state(int state)
 
 	prev_state = mnh_sm_dev->state;
 
-	/* on boot/resume, hold wakelock with timeout */
+	/*
+	 * Before cold boot or resume, hold a wakelock.
+	 */
 	if (state == MNH_STATE_ACTIVE)
-		pm_wakeup_event(mnh_sm_dev->dev,
-				MNH_SM_WAKEUP_SOURCE_TIMEOUT_PRODUCTION);
+		pm_stay_awake(mnh_sm_dev->dev);
 
 	ret = mnh_sm_set_state_locked(state);
 
-	/* release wakelock immediately if ended up not active */
+	/*
+	 * If the state is no longer active, release the wakelock.
+	 * Note that "partial active" is considered active. It doesn't
+	 * matter whether ALLOW_PARTIAL_ACTIVE is configured or not.
+	 */
 	if (mnh_sm_dev->state != MNH_STATE_ACTIVE)
 		pm_relax(mnh_sm_dev->dev);
 
