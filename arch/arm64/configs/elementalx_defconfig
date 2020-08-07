@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm64 4.9.219 Kernel Configuration
+# Linux/arm64 4.9.223 Kernel Configuration
 #
 CONFIG_ARM64=y
 CONFIG_64BIT=y
@@ -45,7 +45,7 @@ CONFIG_THREAD_INFO_IN_TASK=y
 CONFIG_INIT_ENV_ARG_LIMIT=32
 CONFIG_CROSS_COMPILE=""
 # CONFIG_COMPILE_TEST is not set
-CONFIG_LOCALVERSION="-ElementalX-P3-3.05"
+CONFIG_LOCALVERSION="-ElementalX-P3-3.06"
 # CONFIG_LOCALVERSION_AUTO is not set
 CONFIG_HAVE_KERNEL_GZIP=y
 CONFIG_HAVE_KERNEL_LZ4=y
@@ -1592,7 +1592,7 @@ CONFIG_DUMMY=y
 # CONFIG_RMNET_IPLO is not set
 CONFIG_TUN=y
 # CONFIG_TUN_VNET_CROSS_LE is not set
-# CONFIG_VETH is not set
+CONFIG_VETH=y
 # CONFIG_NLMON is not set
 # CONFIG_ARCNET is not set
 
